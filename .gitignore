@@ -1,0 +1,9 @@
+# Code editor configuration files
+.vscode/
+.idea/
+
+# Local
+**.local.*
+
+# Build artifacts
+/build/
