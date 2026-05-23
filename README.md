@@ -22,8 +22,8 @@ cmake --build build
 ```
 
 The Halide generators run at build time and emit per-effect headers and static
-libraries (`build/halide/fx_gamma.*`, `fx_gaussian_cpu.*`, `fx_gaussian_gpu.*`),
-which the `fx_cli` example links against.
+libraries (`build/halide/fx_gamma.*`, `fx_gaussian_cpu.*`, `fx_gaussian_gpu.*`,
+`fx_kawase_cpu.*`, `fx_kawase_gpu.*`), which the `fx_cli` example links against.
 
 ## Run the example CLI
 
@@ -31,7 +31,8 @@ which the `fx_cli` example links against.
 ./build/examples/fx_cli/fx_cli <input.png> <output.png> <effects...> [--gpu]
 ```
 
-Effects apply left-to-right in the order given, so they compose:
+Effects apply left-to-right in the order given, so they compose. Run
+`fx_cli --list` for the available effects and their parameters, `--help` for usage.
 
 ```bash
 # Gamma correction. gamma > 1 brightens midtones, < 1 darkens, = 1 is identity.
@@ -40,9 +41,34 @@ Effects apply left-to-right in the order given, so they compose:
 # Separable Gaussian blur (sigma in pixels).
 ./build/examples/fx_cli/fx_cli input.png blurred.png --gaussian --sigma 8
 
+# Dual-Kawase blur (offset scales the radius). The fast, compositor-style blur.
+./build/examples/fx_cli/fx_cli input.png blurred.png --kawase --offset 3 --gpu
+
 # Blur on the GPU (CUDA), then gamma-correct the result.
 ./build/examples/fx_cli/fx_cli input.png out.png --gaussian --sigma 8 --gamma 0.8 --gpu
 ```
 
-`--gpu` runs the Gaussian passes on CUDA; gamma always runs on the CPU. On WSL2
-the CUDA driver path (`/usr/lib/wsl/lib`) is baked into the binary's RPATH.
+`--gpu` runs the blur passes on CUDA; gamma always runs on the CPU. On WSL2 the
+CUDA driver path (`/usr/lib/wsl/lib`) is baked into the binary's RPATH.
+
+### Driving the chain from a config file
+
+Instead of inline flags, the whole chain can come from a TOML file
+(`--config <file>`, mutually exclusive with inline effects; a CLI `--gpu`
+overrides the file's `backend`):
+
+```toml
+backend = "gpu"
+
+[[effect]]
+name   = "kawase"
+offset = 3.0
+
+[[effect]]
+name  = "gamma"
+value = 0.85
+```
+
+```bash
+./build/examples/fx_cli/fx_cli input.png out.png --config chain.toml
+```
