@@ -1,4 +1,5 @@
 #include "Halide.h"
+#include "fx_common.h"
 
 namespace {
 
@@ -17,12 +18,8 @@ public:
         Halide::Expr clamped = Halide::clamp(corrected, 0.0f, 1.0f);
         output(x, y, c) = Halide::cast<uint8_t>(clamped * 255.0f + 0.5f);
 
-        // Accept interleaved RGB(A) buffers: channels is the unit-stride dim,
-        // x stride is unconstrained (it equals the channel count at runtime).
-        input.dim(0).set_stride(Halide::Expr());
-        input.dim(2).set_stride(1);
-        output.dim(0).set_stride(Halide::Expr());
-        output.dim(2).set_stride(1);
+        fx::set_interleaved_layout(input);
+        fx::set_interleaved_layout(output);
     }
 };
 

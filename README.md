@@ -21,24 +21,28 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-The Halide generator runs at build time and emits `build/halide/fx_gamma.h` and
-`build/halide/libfx_gamma.a`, which the C example links against.
+The Halide generators run at build time and emit per-effect headers and static
+libraries (`build/halide/fx_gamma.*`, `fx_gaussian_cpu.*`, `fx_gaussian_gpu.*`),
+which the `fx_cli` example links against.
 
-## Run the gamma example
-
-```bash
-./build/examples/gamma/gamma <input.png> <output.png> <gamma>
-```
-
-Convention: `gamma > 1` brightens midtones, `gamma < 1` darkens, `gamma = 1` is identity.
+## Run the example CLI
 
 ```bash
-# Brighter
-./build/examples/gamma/gamma input.png brighter.png 2.2
-
-# Darker
-./build/examples/gamma/gamma input.png darker.png 0.45
-
-# Identity: should round-trip within ±1 per channel
-./build/examples/gamma/gamma input.png identity.png 1.0
+./build/examples/fx_cli/fx_cli <input.png> <output.png> <effects...> [--gpu]
 ```
+
+Effects apply left-to-right in the order given, so they compose:
+
+```bash
+# Gamma correction. gamma > 1 brightens midtones, < 1 darkens, = 1 is identity.
+./build/examples/fx_cli/fx_cli input.png brighter.png --gamma 2.2
+
+# Separable Gaussian blur (sigma in pixels).
+./build/examples/fx_cli/fx_cli input.png blurred.png --gaussian --sigma 8
+
+# Blur on the GPU (CUDA), then gamma-correct the result.
+./build/examples/fx_cli/fx_cli input.png out.png --gaussian --sigma 8 --gamma 0.8 --gpu
+```
+
+`--gpu` runs the Gaussian passes on CUDA; gamma always runs on the CPU. On WSL2
+the CUDA driver path (`/usr/lib/wsl/lib`) is baked into the binary's RPATH.

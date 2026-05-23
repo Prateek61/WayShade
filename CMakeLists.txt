@@ -10,4 +10,4 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 find_package(Halide REQUIRED)
 
 add_subdirectory(halide)
-add_subdirectory(examples/gamma)
+add_subdirectory(examples/fx_cli)
