@@ -27,6 +27,7 @@ struct Effect {
     std::vector<ParamSpec> params;
     Invoke                 cpu;   // required
     Invoke                 gpu;   // empty target => CPU-only (e.g. gamma)
+    bool                   needs_alpha = false;  // chain promotes input to RGBA if any op sets this
 };
 
 const std::vector<Effect>& registry();

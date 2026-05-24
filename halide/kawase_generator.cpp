@@ -98,7 +98,7 @@ public:
         }
         for (int k = N - 1; k >= 0; --k) {
             if (k == 0) {
-                // up0 is full-res — fold the cast-to-u8 in to skip a float buffer.
+                // up0 is full-res, fold the cast-to-u8 in to skip a float buffer.
                 output(x, y, c) =
                     cast<uint8_t>(clamp(upsample_expr(src), 0.0f, 255.0f) + 0.5f);
             } else {
@@ -116,7 +116,7 @@ public:
     void schedule() {
         using namespace Halide;
         if (get_target().has_gpu_feature()) {
-            // One kernel per level; intermediates stay device-resident between
+            // One kernel per level, intermediates stay device-resident between
             // passes (no host round-trips inside the pipeline).
             for (Func f : levels) {
                 f.compute_root().reorder(c, x, y)

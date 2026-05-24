@@ -8,13 +8,30 @@
 namespace fxcli {
 
 Image run_chain(const Image& input, const std::vector<Op>& ops, Backend backend) {
-    const int    w = input.width(), h = input.height(), c = input.channels();
-    const size_t nbytes = static_cast<size_t>(w) * h * c;
+    const int w = input.width(), h = input.height(), c = input.channels();
+
+    // shadow/rounded need an alpha channel. Promote the working buffers to RGBA
+    // only when such an effect is in the chain, so pure RGB blur/gamma stays RGB.
+    bool want_alpha = false;
+    for (const Op& op : ops)
+        if (op.effect->needs_alpha) { want_alpha = true; break; }
+    const int wc = (want_alpha && c < 4) ? 4 : c;
 
     // Ping-pong between two scratch buffers; `src` holds the current image.
     // Seed `src` from the input so the caller's image stays untouched.
-    Image  a(w, h, c), b(w, h, c);
-    std::memcpy(a.data(), input.data(), nbytes);
+    Image a(w, h, wc), b(w, h, wc);
+    if (wc == c) {
+        std::memcpy(a.data(), input.data(), static_cast<size_t>(w) * h * c);
+    } else {
+        // Copy the present channels per pixel; fill the synthesized alpha opaque.
+        const uint8_t* s = input.data();
+        uint8_t*       d = a.data();
+        for (size_t i = 0, n = static_cast<size_t>(w) * h; i < n; ++i) {
+            int k = 0;
+            for (; k < c && k < wc; ++k) d[i * wc + k] = s[i * c + k];
+            for (; k < wc; ++k) d[i * wc + k] = (k == 3) ? 255 : 0;
+        }
+    }
     Image* src = &a;
     Image* dst = &b;
 

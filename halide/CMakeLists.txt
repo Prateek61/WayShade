@@ -16,6 +16,18 @@ add_halide_generator(kawase.generator
     SOURCES kawase_generator.cpp
 )
 
+add_halide_generator(shadow.generator
+    SOURCES shadow_generator.cpp
+)
+
+add_halide_generator(color.generator
+    SOURCES color_generator.cpp
+)
+
+add_halide_generator(rounded.generator
+    SOURCES rounded_generator.cpp
+)
+
 # AOT libraries
 add_halide_library(fx_gamma
     FROM gamma.generator
@@ -49,4 +61,31 @@ add_halide_library(fx_kawase_gpu
     FEATURES cuda
     USE_RUNTIME fx_runtime
     PARAMS gpu_block_x=32 gpu_block_y=8
+)
+
+add_halide_library(fx_shadow_cpu
+    FROM shadow.generator
+    GENERATOR shadow
+    USE_RUNTIME fx_runtime
+)
+
+add_halide_library(fx_shadow_gpu
+    FROM shadow.generator
+    GENERATOR shadow
+    FEATURES cuda
+    USE_RUNTIME fx_runtime
+    PARAMS gpu_block_x=32 gpu_block_y=8
+)
+
+# color and rounded are pointwise — CPU-only, like fx_gamma.
+add_halide_library(fx_color
+    FROM color.generator
+    GENERATOR color
+    USE_RUNTIME fx_runtime
+)
+
+add_halide_library(fx_rounded
+    FROM rounded.generator
+    GENERATOR rounded
+    USE_RUNTIME fx_runtime
 )

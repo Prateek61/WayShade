@@ -189,11 +189,14 @@ std::string usage(const char* argv0) {
     s += argv0;
     s += " <input.png> <output.png> (<effects...> | --config <file.toml>) [--gpu]\n"
          "  effects apply left-to-right; set a param with --<name> <value> or a bare value:\n"
-         "    --gamma <v>              gamma correction (value > 0; default 1)\n"
-         "    --gaussian --sigma <s>   separable Gaussian blur (sigma > 0; default 4)\n"
-         "    --kawase --offset <o>    dual-Kawase blur (offset > 0; default 1)\n"
+         "    --gamma <v>              gamma correction (value > 0, default 1)\n"
+         "    --gaussian --sigma <s>   separable Gaussian blur (sigma > 0, default 4)\n"
+         "    --kawase --offset <o>    dual-Kawase blur (offset > 0, default 1)\n"
+         "    --color [--brightness/--contrast/--saturation <v>]  color correction (default 1)\n"
+         "    --rounded --radius <r>   rounded-corner alpha mask (radius >= 0, default 16)\n"
+         "    --shadow [--sigma/--dx/--dy/--tint_r/--tint_g/--tint_b/--opacity <v>]  drop shadow\n"
          "  --config <file.toml>       read the effect chain from a TOML file instead\n"
-         "  --gpu                      run blur passes on the GPU (CUDA)\n"
+         "  --gpu                      run GPU-capable passes on the GPU (CUDA)\n"
          "  --list                     list available effects and their parameters\n"
          "  --help                     show this message\n";
     return s;

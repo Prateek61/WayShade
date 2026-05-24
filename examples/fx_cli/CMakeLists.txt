@@ -14,6 +14,10 @@ target_link_libraries(fx_cli PRIVATE
     fx_gaussian_gpu
     fx_kawase_cpu
     fx_kawase_gpu
+    fx_shadow_cpu
+    fx_shadow_gpu
+    fx_color
+    fx_rounded
     m
 )
 
