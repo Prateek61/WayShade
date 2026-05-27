@@ -1,0 +1,31 @@
+# Linker version script: export only the public ABI under one version node, and
+# make everything else local. Without the `local: *` the Halide-generated
+# kernels (fx_gaussian_cpu, *_argv, *_metadata, internal _par_for_ closures)
+# that we statically link would leak into libfx's dynamic symbol table.
+FX_1.0 {
+  global:
+    fx_version;
+    fx_status_string;
+    fx_context_create;
+    fx_context_destroy;
+    fx_context_last_error;
+    fx_image_create;
+    fx_image_from_data;
+    fx_image_data;
+    fx_image_width;
+    fx_image_height;
+    fx_image_channels;
+    fx_image_destroy;
+    fx_pipeline_create;
+    fx_pipeline_gamma;
+    fx_pipeline_gaussian;
+    fx_pipeline_kawase;
+    fx_pipeline_color;
+    fx_pipeline_rounded;
+    fx_pipeline_shadow;
+    fx_pipeline_clear;
+    fx_pipeline_run;
+    fx_pipeline_destroy;
+  local:
+    *;
+};

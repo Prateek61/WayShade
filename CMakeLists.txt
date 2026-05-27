@@ -9,5 +9,9 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 find_package(Halide REQUIRED)
 
+enable_testing()
+
 add_subdirectory(halide)
+add_subdirectory(src)
 add_subdirectory(examples/fx_cli)
+add_subdirectory(tests)
