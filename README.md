@@ -85,3 +85,48 @@ value = 0.85
 ```bash
 ./build/examples/fx_cli/fx_cli input.png out.png --config chain.toml
 ```
+
+## Use as a library
+
+The effects are also exposed through a small C ABI (`include/fx/fx.h`), built as
+`libfx.so`. Create a context, build a pipeline, and run it into a caller-owned
+output image:
+
+```c
+#include <fx/fx.h>
+
+fx_context_t* ctx;
+fx_context_create(FX_BACKEND_CPU, &ctx);
+
+fx_image_t *in, *out;
+fx_image_from_data(ctx, w, h, 3, rgb_bytes, &in);  /* 3 = RGB, 4 = RGBA */
+fx_image_create(ctx, w, h, 3, &out);
+
+fx_pipeline_t* p;
+fx_pipeline_create(ctx, &p);
+fx_pipeline_gaussian(p, 8.0f);   /* effects apply in the order appended */
+fx_pipeline_gamma(p, 0.8f);
+fx_pipeline_run(p, in, out);     /* writes into out, leaves in unchanged */
+
+const unsigned char* result = fx_image_data(out);
+/* ... use result ... */
+
+fx_pipeline_destroy(p);
+fx_image_destroy(out);
+fx_image_destroy(in);
+fx_context_destroy(ctx);
+```
+
+Handles are opaque and freed by their matching `_destroy`. Every call returns an
+`fx_status_t` (`FX_OK` on success), and `fx_context_last_error(ctx)` gives a
+detail string. The alpha effects (`rounded`, `shadow`) need a 4-channel image.
+
+## Tests
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+`fx_capi_test` is a pure-C check of the ABI. `fx_reference_parity` compares each
+effect against an OpenCV or numpy reference (needs a local `.venv` with `numpy`,
+`opencv-python`, and `pytest`, skipped if absent). See `tests/python/README.md`.
