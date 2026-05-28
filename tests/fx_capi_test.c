@@ -4,9 +4,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <dlfcn.h>
+
 #include "fx/fx.h"
 
 static int failures = 0;
+
+/* The GPU AOT kernels dlopen libcuda at first launch, aborting (not returning an
+   error) when no driver is present.*/
+static int gpu_available(void) {
+    static const char* names[] = {
+        "libcuda.so.1", "libcuda.so", "/usr/lib/wsl/lib/libcuda.so.1", NULL
+    };
+    int i;
+    for (i = 0; names[i]; ++i) {
+        void* h = dlopen(names[i], RTLD_NOW | RTLD_LOCAL);
+        if (h) { dlclose(h); return 1; }
+    }
+    return 0;
+}
 
 #define CHECK(cond, msg)                                            \
     do {                                                            \
@@ -173,7 +189,9 @@ int main(void) {
     /* --- GPU backend: matches CPU within float->u8 rounding; CPU fallback for
        pointwise effects inside a GPU chain --- */
     printf("GPU backend:\n");
-    {
+    if (!gpu_available()) {
+        printf("  skip: libcuda not loadable (no GPU/driver)\n");
+    } else {
         fx_context_t *cpu = NULL, *gpu = NULL;
         unsigned char* seed = (unsigned char*)malloc((size_t)W * H * 3);
         fill_gradient(seed, W, H, 3);

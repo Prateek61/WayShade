@@ -7,7 +7,7 @@ set_target_properties(fx_capi_test PROPERTIES
 )
 target_compile_options(fx_capi_test PRIVATE -Wall -Wextra -pedantic)
 
-target_link_libraries(fx_capi_test PRIVATE fx)
+target_link_libraries(fx_capi_test PRIVATE fx ${CMAKE_DL_LIBS})
 
 add_test(NAME fx_capi_test COMMAND fx_capi_test)
 
@@ -20,9 +20,7 @@ if(EXISTS "/usr/lib/wsl/lib")
 endif()
 
 # Reference-parity suite (tests/python): drives libfx via ctypes and compares its
-# output to numpy / OpenCV references. Registered only when the project's .venv
-# (with pytest, numpy, opencv-python) is present, so it is a no-op for anyone
-# without that local venv. FX_LIB_DIR points the loader at the freshly built libfx.
+# output to numpy / OpenCV references.
 find_program(FX_VENV_PY NAMES python python3
              PATHS "${CMAKE_SOURCE_DIR}/.venv/bin" NO_DEFAULT_PATH)
 if(FX_VENV_PY)
