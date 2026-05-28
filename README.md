@@ -127,6 +127,9 @@ detail string. The alpha effects (`rounded`, `shadow`) need a 4-channel image.
 ctest --test-dir build --output-on-failure
 ```
 
-`fx_capi_test` is a pure-C check of the ABI. `fx_reference_parity` compares each
-effect against an OpenCV or numpy reference (needs a local `.venv` with `numpy`,
-`opencv-python`, and `pytest`, skipped if absent). See `tests/python/README.md`.
+`fx_capi_test` is a pure-C check of the ABI. `fx_reference_parity` runs the
+Python suites under `tests/python/`: OpenCV/numpy reference parity, golden-image
+regression against committed PNGs in `tests/reference/`, and edge-case coverage
+(1x1, odd, non-power-of-2, 1920x1080, alpha-contract). It needs a local `.venv`
+with `numpy`, `opencv-python`, and `pytest`, and is skipped if absent. See
+`tests/python/README.md`.

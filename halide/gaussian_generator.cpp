@@ -65,10 +65,13 @@ public:
         ksum.compute_root();
         kernel.compute_root();
 
+        // GuardWithIf on every split/vectorize/gpu_tile: default ShiftInwards
+        // places the last tile at extent-block, which goes negative when the
+        // image is smaller than the block (1x1 / 7x5 etc.) and aborts on access.
         if (get_target().has_gpu_feature()) {
             // GPU: each thread does the full 2D recompute.
             output.gpu_tile(x, y, xo, yo, xi, yi,
-                            gpu_block_x, gpu_block_y);
+                            gpu_block_x, gpu_block_y, TailStrategy::GuardWithIf);
         } else {
             // CPU: parallel over y-tiles, vectorize x by 8 (AVX2 float width).
             const int vec  = 8;
@@ -76,15 +79,15 @@ public:
 
             output
                 .reorder(c, x, y)
-                .split(y, yo, yi, tile)
+                .split(y, yo, yi, tile, TailStrategy::GuardWithIf)
                 .parallel(yo)
-                .vectorize(x, vec);
+                .vectorize(x, vec, TailStrategy::GuardWithIf);
 
             blur_x
                 .compute_at(output, yo)
                 .store_at(output, yo)
                 .reorder(c, x, y)
-                .vectorize(x, vec);
+                .vectorize(x, vec, TailStrategy::GuardWithIf);
         }
 
         // Inlined RDom updates
