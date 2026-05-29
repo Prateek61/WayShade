@@ -1,0 +1,9 @@
+[package]
+name = "fx-sys"
+version = "0.0.1"
+edition = "2024"
+publish = false
+links = "fx"
+
+[build-dependencies]
+bindgen = "0.72"
