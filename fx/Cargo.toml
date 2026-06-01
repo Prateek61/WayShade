@@ -1,8 +1,18 @@
 [package]
 name = "fx"
 version = "0.0.1"
-edition = "2021"
+edition = "2024"
 publish = false
 
 [dependencies]
 fx-sys = { path = "../fx-sys" }
+image = { version = "0.25", optional = true }
+
+[features]
+default = []
+# Ergonomic PNG/JPEG I/O via the `image` crate (Image <-> RgbImage/RgbaImage).
+image = ["dep:image"]
+
+[[example]]
+name = "still_image"
+required-features = ["image"]
