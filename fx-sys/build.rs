@@ -11,9 +11,9 @@ fn main() {
     println!("cargo:rerun-if-changed={}", header.display());
     println!("cargo:rerun-if-env-changed=FX_LIB_DIR");
 
-    // Raw bindings from the public C ABI. Allowlist our surface so transitive
-    // stddef.h declarations stay out. Newtype enums keep the raw layer sound if
-    // a kernel ever returns an unmodeled code; the safe crate maps them later.
+    // Raw bindings from the public C ABI. Allowlist our own surface so transitive
+    // stddef.h junk stays out. Newtype enums keep the raw layer sound if a kernel
+    // ever returns a code we don't model, and the safe crate maps them later.
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
         .clang_arg(format!("-I{}", include_dir.display()))

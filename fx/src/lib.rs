@@ -22,25 +22,23 @@
 //! # Lifetimes and threading
 //!
 //! [`Image`] and [`Pipeline`] borrow their [`Context`] (`Image<'ctx>`), so the
-//! compiler enforces the ABI rule that a context outlives everything made from
-//! it. None of the handles are `Send` or `Sync`: use one context per thread.
+//! compiler enforces the ABI rule that a context outlives anything made from it.
+//! The handles are neither `Send` nor `Sync`, so use one context per thread.
 //!
 //! # The unsafe boundary
 //!
-//! Safety rests on a few invariants, all upheld here: every handle is created by
-//! a `*_create` call and destroyed exactly once in `Drop` (the types are not
-//! `Clone`/`Copy` and never expose their raw pointer); [`Image::data`] builds a
-//! slice of exactly `width * height * channels` bytes from the C buffer; and
-//! C strings are copied into owned `String`s before the next call can
-//! invalidate them.
+//! A few invariants keep this sound. Every handle comes from a `*_create` call
+//! and is freed exactly once in `Drop` (the types aren't `Clone`/`Copy` and
+//! never hand out their raw pointer). [`Image::data`] only exposes a slice of
+//! `width * height * channels` bytes, and C strings are copied into owned
+//! `String`s before the next call can invalidate them.
 //!
 //! # GPU caveat
 //!
-//! [`Backend::Gpu`] and [`Backend::Auto`] use CUDA. On a machine without a
-//! working CUDA driver the underlying Halide runtime **aborts the process**
-//! (an uncatchable `cuInit` failure), so this is not a recoverable `Err`. The
-//! abort is not undefined behavior, so the API is still safe in the Rust sense,
-//! but prefer [`Backend::Cpu`] unless you know a GPU is present.
+//! [`Backend::Gpu`] and [`Backend::Auto`] use CUDA. With no working CUDA driver
+//! the Halide runtime **aborts the process** (an uncatchable `cuInit` failure),
+//! so it is not a recoverable `Err`. The abort is not UB, so the API stays safe
+//! in the Rust sense, but prefer [`Backend::Cpu`] unless a GPU is present.
 
 mod error;
 mod image;
@@ -89,11 +87,10 @@ impl Context {
     /// Create a context on `backend`.
     pub fn new(backend: Backend) -> Result<Self> {
         let mut ptr: *mut fx_sys::fx_context_t = ptr::null_mut();
-        // SAFETY: `out_ctx` is a valid out-pointer; on FX_OK the callee writes a
-        // non-NULL handle we take ownership of.
+        // SAFETY: out-pointer is valid; on FX_OK we own the handle written to it.
         let status = unsafe { fx_sys::fx_context_create(backend.into(), &mut ptr) };
         if status != fx_sys::fx_status_t::FX_OK {
-            // Creation failed, so there is no context to read a detail from.
+            // No context yet, so there's nowhere to read an error detail from.
             return Err(FxError::from_status(status, String::new()));
         }
         if ptr.is_null() {
@@ -120,8 +117,7 @@ impl std::fmt::Debug for Context {
 
 impl Drop for Context {
     fn drop(&mut self) {
-        // SAFETY: we own `self.ptr`, created by `fx_context_create` and freed
-        // only here, exactly once.
+        // SAFETY: we own this handle and free it only here, exactly once.
         unsafe { fx_sys::fx_context_destroy(self.ptr) }
     }
 }

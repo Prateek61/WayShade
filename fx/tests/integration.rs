@@ -1,6 +1,6 @@
 // Exercises the safe wrapper end to end on the CPU backend: handle lifecycle,
-// the data round-trip, the builder, and every error path. Requires the C side
-// built (transitive via fx-sys)
+// the data round-trip, the builder, and every error path. Needs the C side
+// built, which comes in transitively via fx-sys.
 use fx::{Backend, Context, FxError, Image, Shadow};
 
 fn rgba(w: i32, h: i32) -> Vec<u8> {

@@ -8,6 +8,12 @@ publish = false
 fx-sys = { path = "../fx-sys" }
 image = { version = "0.25", optional = true }
 
+[dev-dependencies]
+# Lean: skip the default plotters/rayon tree, keep only the bench harness.
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+# dlopen probe to gate GPU benches on a real CUDA driver (mirrors fx_capi_test.c).
+libloading = "0.8"
+
 [features]
 default = []
 # Ergonomic PNG/JPEG I/O via the `image` crate (Image <-> RgbImage/RgbaImage).
@@ -16,3 +22,7 @@ image = ["dep:image"]
 [[example]]
 name = "still_image"
 required-features = ["image"]
+
+[[bench]]
+name = "effects"
+harness = false

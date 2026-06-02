@@ -1,7 +1,7 @@
 use std::ffi::CStr;
 use std::ptr;
 
-// The unsafe layer: create and destroy a context, the minimal proof the
+// The raw layer: create and destroy a context. The minimal proof that the
 // bindings link and the ABI round-trips.
 #[test]
 fn context_create_destroy() {

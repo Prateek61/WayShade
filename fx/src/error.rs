@@ -78,15 +78,15 @@ impl fmt::Display for FxError {
 
 impl std::error::Error for FxError {}
 
-/// Read a context's last-error message into an owned `String`. The C pointer is
-/// only valid until the next call on the context, so we copy it immediately.
-/// Returns an empty string when the context is NULL or reports no error.
+/// Copy a context's last-error message out as an owned `String`. The C pointer
+/// is only good until the next call, so copy it now. Empty if the context is
+/// NULL or has no error to report.
 pub(crate) fn last_error_string(ctx: *const fx_context_t) -> String {
     if ctx.is_null() {
         return String::new();
     }
-    // SAFETY: `ctx` is a live handle; `fx_context_last_error` returns a valid C
-    // string (or NULL) owned by the context, which we copy before returning.
+    // SAFETY: ctx is live. The returned C string (or NULL) is owned by the
+    // context, so copy it before handing back.
     unsafe {
         let p = fx_context_last_error(ctx);
         if p.is_null() {

@@ -121,6 +121,38 @@ Handles are opaque and freed by their matching `_destroy`. Every call returns an
 `fx_status_t` (`FX_OK` on success), and `fx_context_last_error(ctx)` gives a
 detail string. The alpha effects (`rounded`, `shadow`) need a 4-channel image.
 
+### From Rust
+
+The same library is wrapped by the safe `fx` crate, built on the raw `fx-sys`
+FFI bindings. Build the C side first (above) so `libfx.so` exists, then the
+public API has no `unsafe`, handles free themselves on drop, and a built
+pipeline runs into a caller-owned output:
+
+```rust
+use fx::{Backend, Context, Image, Shadow};
+
+let ctx = Context::new(Backend::Cpu)?;
+let input = Image::from_data(&ctx, w, h, 4, &rgba_bytes)?; // 3 = RGB, 4 = RGBA
+let mut output = Image::new(&ctx, w, h, 4)?;
+
+ctx.pipeline()
+    .gaussian(8.0)
+    .shadow(Shadow { dy: 12.0, ..Default::default() })
+    .gamma(0.9)
+    .run(&input, &mut output)?; // writes output, leaves input untouched
+
+let result: &[u8] = output.data();
+```
+
+Each effect method validates immediately and the first failure is surfaced by
+`run`, so a whole chain needs one `?`. An optional `image`-crate integration
+(`from_rgba8` / `to_rgba8` and friends) lives behind the `image` feature. A full
+mirror of the CLI above ships as a runnable example:
+
+```bash
+cargo run -p fx --features image --example still_image -- input.png out.png --gaussian 8 --gamma 0.9 [--gpu]
+```
+
 ## Tests
 
 ```bash
@@ -133,3 +165,36 @@ regression against committed PNGs in `tests/reference/`, and edge-case coverage
 (1x1, odd, non-power-of-2, 1920x1080, alpha-contract). It needs a local `.venv`
 with `numpy`, `opencv-python`, and `pytest`, and is skipped if absent. See
 `tests/python/README.md`.
+
+## Benchmarks
+
+Per-frame timings for every effect live in `fx/benches/effects.rs`, a
+[criterion](https://crates.io/crates/criterion) suite over the safe `fx` crate.
+One sample is one `Pipeline::run`, the work a compositor does per frame (on the
+GPU backend that includes the host↔device copies, not just the kernel). Each
+effect is measured at 1080p, 1440p, and 4K on the CPU, and the three blurs
+(`gaussian`, `kawase`, `shadow`) additionally on CUDA.
+
+Build the C side first so `libfx.so` exists, then:
+
+```bash
+cmake --build build
+cargo bench -p fx
+```
+
+The default config targets a roughly 3-5 minute run. Three env vars tune the
+length; raise them for trustworthy published numbers:
+
+| env var | default | meaning |
+|---------|---------|---------|
+| `FX_BENCH_SAMPLE_SIZE` | 10 | criterion samples (floor 10) |
+| `FX_BENCH_MEASURE_SECS` | 3.0 | target measurement time |
+| `FX_BENCH_WARMUP_SECS` | 1.0 | warmup time |
+
+```bash
+FX_BENCH_SAMPLE_SIZE=100 FX_BENCH_MEASURE_SECS=10 cargo bench -p fx
+```
+
+The GPU groups auto-skip when no CUDA driver is present (a
+`dlopen("libcuda.so.1")` probe), so the suite runs CPU-only on a driverless
+machine instead of aborting.

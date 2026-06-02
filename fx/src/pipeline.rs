@@ -69,8 +69,9 @@ impl<'ctx> Pipeline<'ctx> {
         Pipeline { ptr, ctx, err }
     }
 
-    /// Append one effect via `f`, stashing the first failure. A no-op once an
-    /// earlier step has errored (so `ptr` is never used after a failed create).
+    /// Append one effect via `f`, keeping only the first failure. Once an earlier
+    /// step has errored this does nothing, so `ptr` is never touched after a
+    /// failed create.
     fn step<F>(mut self, f: F) -> Self
     where
         F: FnOnce(*mut fx_pipeline_t) -> fx_status_t,
@@ -136,8 +137,8 @@ impl<'ctx> Pipeline<'ctx> {
                 output.channels()
             )));
         }
-        // SAFETY: `self.ptr` is a live pipeline (err is None so create succeeded);
-        // the image handles are live and dimensions match.
+        // SAFETY: err is None, so create succeeded and self.ptr is a live
+        // pipeline; the image handles are live and their dimensions match.
         let status = unsafe { fx_sys::fx_pipeline_run(self.ptr, input.as_ptr(), output.as_mut_ptr()) };
         if status != fx_status_t::FX_OK {
             return Err(FxError::from_status(status, last_error_string(self.ctx.as_ptr())));
@@ -154,8 +155,8 @@ impl std::fmt::Debug for Pipeline<'_> {
 
 impl Drop for Pipeline<'_> {
     fn drop(&mut self) {
-        // SAFETY: we own `self.ptr`. It is NULL only if create failed, and
-        // `fx_pipeline_destroy` tolerates NULL.
+        // SAFETY: we own this handle. It is NULL only if create failed, and
+        // fx_pipeline_destroy tolerates NULL.
         unsafe { fx_sys::fx_pipeline_destroy(self.ptr) }
     }
 }

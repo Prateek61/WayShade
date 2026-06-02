@@ -18,8 +18,8 @@ impl<'ctx> Image<'ctx> {
     /// must be 3 (RGB) or 4 (RGBA).
     pub fn new(ctx: &'ctx Context, width: i32, height: i32, channels: i32) -> Result<Self> {
         let mut ptr: *mut fx_image_t = ptr::null_mut();
-        // SAFETY: `ctx` is live; `out_img` is a valid out-pointer. On FX_OK the
-        // callee writes a non-NULL handle we take ownership of.
+        // SAFETY: ctx is live and out_img is a valid out-pointer; on FX_OK we
+        // own the handle written to it.
         let status = unsafe { fx_sys::fx_image_create(ctx.as_ptr(), width, height, channels, &mut ptr) };
         Self::from_raw(status, ptr, ctx)
     }
@@ -46,8 +46,8 @@ impl<'ctx> Image<'ctx> {
             )));
         }
         let mut ptr: *mut fx_image_t = ptr::null_mut();
-        // SAFETY: `pixels` is at least `expected` bytes (checked above); the C
-        // side copies them, so the borrow need not outlive this call.
+        // SAFETY: pixels holds exactly `expected` bytes (checked above) and the
+        // C side copies them, so the borrow need not outlive this call.
         let status = unsafe {
             fx_sys::fx_image_from_data(ctx.as_ptr(), width, height, channels, pixels.as_ptr(), &mut ptr)
         };
@@ -87,8 +87,8 @@ impl<'ctx> Image<'ctx> {
     /// The interleaved pixel bytes, `width * height * channels` long.
     pub fn data(&self) -> &[u8] {
         let len = self.len();
-        // SAFETY: `fx_image_data` returns a pointer to exactly `len` writable
-        // bytes valid for the image's lifetime; the shared borrow keeps it so.
+        // SAFETY: fx_image_data points at exactly `len` bytes that live as long
+        // as the image; the shared borrow keeps the pointer valid.
         unsafe {
             let p = fx_sys::fx_image_data(self.ptr);
             std::slice::from_raw_parts(p, len)
@@ -126,8 +126,7 @@ impl std::fmt::Debug for Image<'_> {
 
 impl Drop for Image<'_> {
     fn drop(&mut self) {
-        // SAFETY: we own `self.ptr`, created by an `fx_image_*` call and never
-        // copied or freed elsewhere, so this destroys it exactly once.
+        // SAFETY: we own this handle and free it only here, exactly once.
         unsafe { fx_sys::fx_image_destroy(self.ptr) }
     }
 }
