@@ -13,6 +13,10 @@ GPU/CPU-accelerated visual effects library for Wayland compositors and clients.
   export Halide_DIR=$HOME/opt/halide/lib/cmake/Halide
   export LD_LIBRARY_PATH=$HOME/opt/halide/lib:$LD_LIBRARY_PATH
   ```
+- For the Rust crates: a Rust toolchain (rustup) and `libclang` (`libclang-dev` on
+  Debian/Ubuntu) — `bindgen` needs it to build `fx-sys`.
+- For the Wayland demo only: a running `wlr-layer-shell` compositor (Sway, Hyprland,
+  or KWin). The `wayshade-panel` crate has no other system dependency.
 
 ## Build
 
@@ -152,6 +156,27 @@ mirror of the CLI above ships as a runnable example:
 ```bash
 cargo run -p fx --features image --example still_image -- input.png out.png --gaussian 8 --gamma 0.9 [--gpu]
 ```
+
+## Wayland demo
+
+A `wlr-layer-shell` panel lives in `examples/wayland-panel/` (the `wayshade-panel`
+binary). Right now it's protocol scaffolding — a solid, gently pulsing color bar
+anchored to a screen edge, driven by a vsync frame-callback loop — built on
+[smithay-client-toolkit](https://crates.io/crates/smithay-client-toolkit). It has
+no dependency on `libfx` yet, so it builds with plain Cargo and a running Wayland
+session; later stages capture the backdrop behind the bar and run it through the
+blur for a live frosted-glass panel.
+
+```bash
+cargo build -p wayshade-panel --release
+./target/release/wayshade-panel --anchor top --height 48 --color 8844ff
+./target/release/wayshade-panel --help        # all flags
+```
+
+Quit with Ctrl-C (it unwinds cleanly and tears the surface down). Needs a
+compositor that implements `zwlr_layer_shell_v1` — Sway, Hyprland, and KWin all
+do. `WAYLAND_DEBUG=1` prints the protocol exchange if you want to watch the
+layer-surface handshake and frame callbacks.
 
 ## Tests
 
