@@ -6,9 +6,11 @@ publish = false
 
 [dependencies]
 # default-features off drops the xkbcommon/seat keyboard path (system libxkbcommon
-# dep) and SCTK's own calloop glue — we drive calloop ourselves and have no keyboard.
+# dep) and SCTK's own calloop glue, we drive calloop ourselves and have no keyboard.
 smithay-client-toolkit = { version = "0.19", default-features = false }
 wayland-client = "0.31"
+# wlr-screencopy bindings for backdrop capture; SCTK doesn't wrap this one.
+wayland-protocols-wlr = { version = "0.3", default-features = false, features = ["client"] }
 calloop = { version = "0.14", features = ["signals"] }
 calloop-wayland-source = "0.4"
 

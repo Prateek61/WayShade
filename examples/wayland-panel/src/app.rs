@@ -14,11 +14,16 @@ use smithay_client_toolkit::{
     shm::{Shm, ShmHandler, slot::SlotPool},
 };
 use wayland_client::{
-    Connection, QueueHandle,
+    Connection, Dispatch, QueueHandle, WEnum,
     globals::GlobalList,
-    protocol::{wl_output, wl_shm, wl_surface},
+    protocol::{wl_buffer, wl_output, wl_shm, wl_surface},
+};
+use wayland_protocols_wlr::screencopy::v1::client::{
+    zwlr_screencopy_frame_v1::{self, ZwlrScreencopyFrameV1},
+    zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1,
 };
 
+use crate::backdrop::{Backdrop, Capture, Synthetic};
 use crate::{Config, Edge};
 
 pub struct App {
@@ -27,12 +32,14 @@ pub struct App {
     shm: Shm,
     pool: SlotPool,
     layer: LayerSurface,
+    backdrop: Backdrop,
     cfg: Config,
     width: u32,
     height: u32,
+    time: u32,
     configured: bool,
     pub exit: bool,
-    // rough fps accounting, reported once a second to stderr
+    // rough fps + capture-latency accounting, reported once a second to stderr
     frames: u32,
     last_report: u32,
 }
@@ -59,6 +66,20 @@ impl App {
         }
         layer.commit();
 
+        // Pick the real screencopy source if the compositor offers the manager and the
+        // user hasn't forced the fallback; otherwise paint the synthetic test pattern.
+        let anchor_top = matches!(cfg.anchor, Edge::Top);
+        let backdrop = match globals.bind::<ZwlrScreencopyManagerV1, _, _>(qh, 1..=3, ()) {
+            Ok(mgr) if !cfg.no_capture => {
+                eprintln!("wayshade-panel: capturing backdrop via zwlr_screencopy_manager_v1");
+                Backdrop::Screencopy(Box::new(Capture::new(mgr, &shm, cfg.cursor, anchor_top)))
+            }
+            _ => {
+                eprintln!("wayshade-panel: no screencopy manager using synthetic backdrop");
+                Backdrop::Synthetic(Synthetic::new())
+            }
+        };
+
         // Enough for a 1080p-wide bar up front; create_buffer grows it for wider outputs.
         let pool = SlotPool::new(1920 * cfg.height as usize * 4, &shm).expect("create shm pool");
 
@@ -68,8 +89,10 @@ impl App {
             shm,
             pool,
             layer,
+            backdrop,
             width: 0,
             height: cfg.height,
+            time: 0,
             cfg,
             configured: false,
             exit: false,
@@ -78,7 +101,23 @@ impl App {
         }
     }
 
-    fn draw(&mut self, qh: &QueueHandle<App>, time: u32) {
+    // Start the next backdrop capture (or repaint the synthetic pattern). The real
+    // source returns immediately and lands its pixels async by the next frame, so
+    // capture stays pipelined one frame behind present and never blocks here.
+    fn kick_capture(&mut self, qh: &QueueHandle<App>) {
+        let out = self.output_state.outputs().next();
+        let (w, h, t) = (self.width, self.height, self.time);
+        match &mut self.backdrop {
+            Backdrop::Synthetic(s) => s.fill(t, w, h),
+            Backdrop::Screencopy(c) => {
+                if let Some(o) = out {
+                    c.begin(&o, qh);
+                }
+            }
+        }
+    }
+
+    fn draw(&mut self, qh: &QueueHandle<App>) {
         let (w, h) = (self.width, self.height);
         if w == 0 || h == 0 {
             return;
@@ -89,18 +128,18 @@ impl App {
             .create_buffer(w as i32, h as i32, stride, wl_shm::Format::Argb8888)
             .expect("create_buffer");
 
-        // Gentle brightness pulse so the vsync-driven frame loop is visibly alive.
-        let pulse = (time as f32 / 1000.0 * std::f32::consts::PI).sin() * 0.25 + 0.75;
-        let a = self.cfg.alpha as u16;
-        let [r, g, b] = self.cfg.color;
-        // wl_shm ARGB8888 is premultiplied, little-endian bytes B,G,R,A.
-        let pm = |c: u8| ((c as f32 * pulse) as u16 * a / 255) as u8;
-        let (pb, pg, pr, pa) = (pm(b), pm(g), pm(r), self.cfg.alpha);
-        for px in canvas.chunks_exact_mut(4) {
-            px[0] = pb;
-            px[1] = pg;
-            px[2] = pr;
-            px[3] = pa;
+        if !self.backdrop.present(canvas, w, h) {
+            let a = self.cfg.alpha;
+            let [r, g, b] = self.cfg.color;
+            // wl_shm ARGB8888 is premultiplied, little-endian bytes B,G,R,A.
+            let pm = |c: u8| ((c as u16 * a as u16) / 255) as u8;
+            let (pb, pg, pr) = (pm(b), pm(g), pm(r));
+            for px in canvas.chunks_exact_mut(4) {
+                px[0] = pb;
+                px[1] = pg;
+                px[2] = pr;
+                px[3] = a;
+            }
         }
 
         let surface = self.layer.wl_surface();
@@ -116,16 +155,28 @@ impl CompositorHandler for App {
     fn transform_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: wl_output::Transform) {}
 
     fn frame(&mut self, _: &Connection, qh: &QueueHandle<Self>, _: &wl_surface::WlSurface, time: u32) {
+        self.time = time;
         if self.last_report == 0 {
             self.last_report = time;
         }
         self.frames += 1;
         if time.saturating_sub(self.last_report) >= 1000 {
-            eprintln!("wayshade-panel: {} fps", self.frames);
+            let cap = match &mut self.backdrop {
+                Backdrop::Screencopy(c) => c.drain_stats(),
+                Backdrop::Synthetic(_) => None,
+            };
+            match cap {
+                Some((avg, max, n)) => eprintln!(
+                    "wayshade-panel: {} fps, capture {avg:.2}ms avg / {max:.2}ms max ({n} frames)",
+                    self.frames
+                ),
+                None => eprintln!("wayshade-panel: {} fps", self.frames),
+            }
             self.frames = 0;
             self.last_report = time;
         }
-        self.draw(qh, time);
+        self.kick_capture(qh);
+        self.draw(qh);
     }
 
     fn surface_enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
@@ -150,7 +201,7 @@ impl LayerShellHandler for App {
         self.height = if h == 0 { self.cfg.height } else { h };
         if !self.configured {
             self.configured = true;
-            self.draw(qh, 0); // kick off the frame-callback loop
+            self.draw(qh); // kick off the frame-callback loop
         }
     }
 }
@@ -174,6 +225,35 @@ impl ShmHandler for App {
     fn shm_state(&mut self) -> &mut Shm {
         &mut self.shm
     }
+}
+
+// wlr-screencopy isn't covered by SCTK's delegates, so dispatch its two objects by
+// hand. The manager is event-less; the frame drives the whole capture lifecycle.
+impl Dispatch<ZwlrScreencopyManagerV1, ()> for App {
+    fn event(_: &mut Self, _: &ZwlrScreencopyManagerV1, _: <ZwlrScreencopyManagerV1 as wayland_client::Proxy>::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+}
+
+impl Dispatch<ZwlrScreencopyFrameV1, ()> for App {
+    fn event(state: &mut Self, _: &ZwlrScreencopyFrameV1, event: zwlr_screencopy_frame_v1::Event, _: &(), _: &Connection, qh: &QueueHandle<Self>) {
+        use zwlr_screencopy_frame_v1::{Event, Flags};
+        let Backdrop::Screencopy(cap) = &mut state.backdrop else {
+            return;
+        };
+        match event {
+            Event::Buffer { format, width, height, stride } => cap.on_buffer(format, width, height, stride, qh),
+            Event::Flags { flags } => cap.set_y_invert(matches!(flags, WEnum::Value(f) if f.contains(Flags::YInvert))),
+            Event::BufferDone => cap.on_buffer_done(qh),
+            Event::Ready { .. } => cap.on_ready(),
+            Event::Failed => cap.on_failed(),
+            _ => {} // damage / linux_dmabuf: not used for the shm path
+        }
+    }
+}
+
+// Our reused capture buffer. We gate the next copy on the frame's `ready` event, so
+// release tracking isn't needed here, this just satisfies the Dispatch bound.
+impl Dispatch<wl_buffer::WlBuffer, ()> for App {
+    fn event(_: &mut Self, _: &wl_buffer::WlBuffer, _: wl_buffer::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
 }
 
 impl ProvidesRegistryState for App {

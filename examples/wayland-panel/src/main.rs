@@ -1,8 +1,7 @@
-// WayShade demo: a wlr-layer-shell bar. Stage 10 is pure protocol scaffolding —
-// a solid (gently pulsing) color bar anchored to an edge, driven by a vsync frame
-// loop. No effects yet; the backdrop capture + blur land in later stages.
+// WayShade demo: a wlr-layer-shell bar.
 
 mod app;
+mod backdrop;
 
 use std::time::Duration;
 
@@ -28,6 +27,8 @@ pub struct Config {
     pub color: [u8; 3],
     pub alpha: u8,
     pub exclusive: bool,
+    pub no_capture: bool,
+    pub cursor: bool,
 }
 
 impl Default for Config {
@@ -38,22 +39,26 @@ impl Default for Config {
             color: [0x28, 0x2a, 0x36], // a calm dark slate
             alpha: 224,
             exclusive: false,
+            no_capture: false,
+            cursor: false,
         }
     }
 }
 
 const USAGE: &str = "\
-wayshade-panel — a wlr-layer-shell demo bar
+wayshade-panel a wlr-layer-shell demo bar
 
 usage: wayshade-panel [--anchor top|bottom] [--height N] [--color RRGGBB]
-                      [--alpha 0-255] [--exclusive]
+                      [--alpha 0-255] [--exclusive] [--no-capture] [--cursor]
 
-  --anchor    edge to dock the bar to (default top)
-  --height    bar height in px (default 40)
-  --color     fill color, hex RRGGBB (default 282a36)
-  --alpha     bar opacity 0-255 (default 224)
-  --exclusive reserve the bar's space so windows don't overlap it
-  --help      print this and exit";
+  --anchor     edge to dock the bar to (default top)
+  --height     bar height in px (default 40)
+  --color      fallback fill color before first capture, hex RRGGBB (default 282a36)
+  --alpha      fallback fill opacity 0-255 (default 224)
+  --exclusive  reserve the bar's space so windows don't overlap it
+  --no-capture force the synthetic backdrop instead of wlr-screencopy
+  --cursor     composite the cursor into the captured backdrop
+  --help       print this and exit";
 
 impl Config {
     fn from_args() -> Result<Config, String> {
@@ -73,6 +78,8 @@ impl Config {
                 "--color" => cfg.color = parse_hex(&val()?)?,
                 "--alpha" => cfg.alpha = val()?.parse().map_err(|_| "--alpha must be 0-255".to_string())?,
                 "--exclusive" => cfg.exclusive = true,
+                "--no-capture" => cfg.no_capture = true,
+                "--cursor" => cfg.cursor = true,
                 "--help" | "-h" => {
                     println!("{USAGE}");
                     std::process::exit(0);

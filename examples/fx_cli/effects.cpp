@@ -16,7 +16,7 @@ namespace fxcli {
 
 namespace {
 constexpr float INF = std::numeric_limits<float>::infinity();
-// Smallest positive normal — used as an inclusive lower bound to mean "> 0".
+// Smallest positive normal, used as an inclusive lower bound to mean "> 0".
 constexpr float POS = std::numeric_limits<float>::min();
 }  // namespace
 

@@ -17,7 +17,7 @@ fn main() {
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
 
     // WSL keeps the CUDA driver here, so bake it in for the `--gpu` example to
-    // work without LD_LIBRARY_PATH. No-op off WSL (Stage 1 gotcha #10).
+    // work without LD_LIBRARY_PATH. No-op off WSL.
     if Path::new("/usr/lib/wsl/lib").exists() {
         println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/wsl/lib");
     }

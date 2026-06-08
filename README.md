@@ -14,7 +14,7 @@ GPU/CPU-accelerated visual effects library for Wayland compositors and clients.
   export LD_LIBRARY_PATH=$HOME/opt/halide/lib:$LD_LIBRARY_PATH
   ```
 - For the Rust crates: a Rust toolchain (rustup) and `libclang` (`libclang-dev` on
-  Debian/Ubuntu) — `bindgen` needs it to build `fx-sys`.
+  Debian/Ubuntu) `bindgen` needs it to build `fx-sys`.
 - For the Wayland demo only: a running `wlr-layer-shell` compositor (Sway, Hyprland,
   or KWin). The `wayshade-panel` crate has no other system dependency.
 
@@ -160,23 +160,33 @@ cargo run -p fx --features image --example still_image -- input.png out.png --ga
 ## Wayland demo
 
 A `wlr-layer-shell` panel lives in `examples/wayland-panel/` (the `wayshade-panel`
-binary). Right now it's protocol scaffolding — a solid, gently pulsing color bar
-anchored to a screen edge, driven by a vsync frame-callback loop — built on
-[smithay-client-toolkit](https://crates.io/crates/smithay-client-toolkit). It has
-no dependency on `libfx` yet, so it builds with plain Cargo and a running Wayland
-session; later stages capture the backdrop behind the bar and run it through the
-blur for a live frosted-glass panel.
+binary), built on [smithay-client-toolkit](https://crates.io/crates/smithay-client-toolkit).
+Each frame it captures the screen behind the bar via `wlr-screencopy` and blits it
+straight through a live mirror, no effects yet. It has no dependency on `libfx` \
+yet, so it builds with plain Cargo and a running Wayland session. Compositors 
+that don't expose screencopy (e.g. KWin) fall back to a synthetic animated pattern 
+so the capture/blit/timing path still runs.
 
 ```bash
 cargo build -p wayshade-panel --release
 ./target/release/wayshade-panel --anchor top --height 48 --color 8844ff
-./target/release/wayshade-panel --help        # all flags
+./target/release/wayshade-panel --no-capture   # force the synthetic backdrop
+./target/release/wayshade-panel --help         # all flags
 ```
 
-Quit with Ctrl-C (it unwinds cleanly and tears the surface down). Needs a
-compositor that implements `zwlr_layer_shell_v1` — Sway, Hyprland, and KWin all
-do. `WAYLAND_DEBUG=1` prints the protocol exchange if you want to watch the
-layer-surface handshake and frame callbacks.
+Quit with Ctrl-C (it unwinds cleanly and tears the surface down). Needs a compositor
+that implements `zwlr_layer_shell_v1` Sway, Hyprland, and KWin all do and, for
+real backdrop capture, `zwlr_screencopy_v1` (Sway and Hyprland; KWin does not, hence
+the synthetic fallback). On a compositor without screencopy (e.g. KDE/KWin) you can
+still see real capture by running the panel inside a **nested Sway**:
+
+```bash
+sway   # opens a nested compositor; in a terminal launched inside it:
+WAYLAND_DISPLAY=wayland-1 ./target/release/wayshade-panel --height 720
+```
+
+`WAYLAND_DEBUG=1` prints the protocol exchange if you want to watch the layer-surface
+handshake, the screencopy frames, and the frame callbacks.
 
 ## Tests
 
@@ -210,11 +220,11 @@ cargo bench -p fx
 The default config targets a roughly 3-5 minute run. Three env vars tune the
 length; raise them for trustworthy published numbers:
 
-| env var | default | meaning |
-|---------|---------|---------|
-| `FX_BENCH_SAMPLE_SIZE` | 10 | criterion samples (floor 10) |
-| `FX_BENCH_MEASURE_SECS` | 3.0 | target measurement time |
-| `FX_BENCH_WARMUP_SECS` | 1.0 | warmup time |
+| env var                 | default | meaning                      |
+| ----------------------- | ------- | ---------------------------- |
+| `FX_BENCH_SAMPLE_SIZE`  | 10      | criterion samples (floor 10) |
+| `FX_BENCH_MEASURE_SECS` | 3.0     | target measurement time      |
+| `FX_BENCH_WARMUP_SECS`  | 1.0     | warmup time                  |
 
 ```bash
 FX_BENCH_SAMPLE_SIZE=100 FX_BENCH_MEASURE_SECS=10 cargo bench -p fx

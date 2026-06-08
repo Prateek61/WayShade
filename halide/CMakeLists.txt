@@ -1,4 +1,4 @@
-# Shared Halide runtime — every fx_* AOT lib uses it so we don't pull in
+# Shared Halide runtime every fx_* AOT lib uses it so we don't pull in
 # multiple runtimes (with conflicting halide_malloc/etc. symbols) when the
 # example links several effects.
 add_halide_runtime(fx_runtime TARGETS host)
@@ -77,7 +77,7 @@ add_halide_library(fx_shadow_gpu
     PARAMS gpu_block_x=32 gpu_block_y=8
 )
 
-# color and rounded are pointwise — CPU-only, like fx_gamma.
+# color and rounded are pointwise CPU-only, like fx_gamma.
 add_halide_library(fx_color
     FROM color.generator
     GENERATOR color
