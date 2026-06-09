@@ -161,18 +161,27 @@ cargo run -p fx --features image --example still_image -- input.png out.png --ga
 
 A `wlr-layer-shell` panel lives in `examples/wayland-panel/` (the `wayshade-panel`
 binary), built on [smithay-client-toolkit](https://crates.io/crates/smithay-client-toolkit).
-Each frame it captures the screen behind the bar via `wlr-screencopy` and blits it
-straight through a live mirror, no effects yet. It has no dependency on `libfx` \
-yet, so it builds with plain Cargo and a running Wayland session. Compositors 
-that don't expose screencopy (e.g. KWin) fall back to a synthetic animated pattern 
-so the capture/blit/timing path still runs.
+Each frame it captures the output via `wlr-screencopy`, runs the strip just outside
+the bar through `fx` for a live dual-Kawase blur, composites a frosted tint, and
+presents it, so the bar reads as frosted glass over the content beside it (mirroring
+the strip *outside* the bar, rather than the pixels under it, keeps the capture
+feedback-free). It depends on `fx`, so build the C side first (`cmake --build build`)
+before the panel. Compositors that don't expose screencopy (e.g. KWin) fall back to
+a synthetic animated pattern, which is blurred just the same so the whole path still
+runs.
 
 ```bash
+cmake --build build                            # libfx must exist; the panel links it
 cargo build -p wayshade-panel --release
-./target/release/wayshade-panel --anchor top --height 48 --color 8844ff
+./target/release/wayshade-panel --anchor top --height 48 --blur 3
+./target/release/wayshade-panel --gpu          # run the blur on CUDA instead of the CPU
+./target/release/wayshade-panel --no-blur      # show the raw mirror, no blur
 ./target/release/wayshade-panel --no-capture   # force the synthetic backdrop
 ./target/release/wayshade-panel --help         # all flags
 ```
+
+The blur runs on the CPU by default (the mirrored strip is small, ~2 ms/frame, well
+under a 60 Hz budget.
 
 Quit with Ctrl-C (it unwinds cleanly and tears the surface down). Needs a compositor
 that implements `zwlr_layer_shell_v1` Sway, Hyprland, and KWin all do and, for
@@ -181,12 +190,16 @@ the synthetic fallback). On a compositor without screencopy (e.g. KDE/KWin) you 
 still see real capture by running the panel inside a **nested Sway**:
 
 ```bash
-sway   # opens a nested compositor; in a terminal launched inside it:
-WAYLAND_DISPLAY=wayland-1 ./target/release/wayshade-panel --height 720
+sway   # opens a nested compositor window; keep it visible and focused
+WAYLAND_DISPLAY=wayland-1 ./target/release/wayshade-panel --height 48 --alpha 0
 ```
 
-`WAYLAND_DEBUG=1` prints the protocol exchange if you want to watch the layer-surface
-handshake, the screencopy frames, and the frame callbacks.
+Keep the nested Sway window on top — an occluded or minimized one gets no frame
+callbacks, so the panel freezes on its first frame. The bar mirrors the strip right
+below it, so open a window in that Sway session under the bar to give the blur some
+busy content (an empty desktop blurs to nothing); `--alpha 0` drops the tint so the
+blur is easy to see. `WAYLAND_DEBUG=1` prints the protocol exchange if you want to
+watch the layer-surface handshake, the screencopy frames, and the frame callbacks.
 
 ## Tests
 

@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
@@ -24,6 +26,7 @@ use wayland_protocols_wlr::screencopy::v1::client::{
 };
 
 use crate::backdrop::{Backdrop, Capture, Synthetic};
+use crate::effect::{Blur, composite_tint};
 use crate::{Config, Edge};
 
 pub struct App {
@@ -33,15 +36,24 @@ pub struct App {
     pool: SlotPool,
     layer: LayerSurface,
     backdrop: Backdrop,
+    blur: Option<Blur>,
     cfg: Config,
     width: u32,
     height: u32,
     time: u32,
     configured: bool,
     pub exit: bool,
-    // rough fps + capture-latency accounting, reported once a second to stderr
+    // The last raw captured strip and its blurred+tinted result. If a new capture
+    // matches prev_raw the backdrop is unchanged, so we reuse cached and skip the blur.
+    prev_raw: Vec<u8>,
+    cached: Vec<u8>,
+    // rough fps + capture-latency + blur-time accounting, reported once a second
     frames: u32,
     last_report: u32,
+    blur_sum: Duration,
+    blur_max: Duration,
+    blur_count: u32,
+    blur_skipped: u32,
 }
 
 impl App {
@@ -80,6 +92,20 @@ impl App {
             }
         };
 
+        // The captured strip is routed through libfx for a live dual-Kawase blur,
+        // unless --no-blur asks for the raw mirror. CPU by default; --gpu picks CUDA.
+        let blur = if cfg.no_blur {
+            eprintln!("wayshade-panel: blur disabled, mirroring the raw strip");
+            None
+        } else {
+            eprintln!(
+                "wayshade-panel: {} blur, kawase offset {}",
+                if cfg.gpu { "GPU" } else { "CPU" },
+                cfg.blur
+            );
+            Some(Blur::new(cfg.gpu, cfg.blur).expect("create fx blur context"))
+        };
+
         // Enough for a 1080p-wide bar up front; create_buffer grows it for wider outputs.
         let pool = SlotPool::new(1920 * cfg.height as usize * 4, &shm).expect("create shm pool");
 
@@ -90,14 +116,21 @@ impl App {
             pool,
             layer,
             backdrop,
+            blur,
             width: 0,
             height: cfg.height,
             time: 0,
             cfg,
             configured: false,
             exit: false,
+            prev_raw: Vec::new(),
+            cached: Vec::new(),
             frames: 0,
             last_report: 0,
+            blur_sum: Duration::ZERO,
+            blur_max: Duration::ZERO,
+            blur_count: 0,
+            blur_skipped: 0,
         }
     }
 
@@ -117,6 +150,29 @@ impl App {
         }
     }
 
+    // Format and reset the accumulated blur-time stats for the periodic report.
+    // Empty when nothing was drawn (e.g. --no-blur).
+    fn drain_blur_stats(&mut self) -> String {
+        if self.blur_count == 0 && self.blur_skipped == 0 {
+            return String::new();
+        }
+        let avg = if self.blur_count > 0 {
+            self.blur_sum.as_secs_f32() * 1000.0 / self.blur_count as f32
+        } else {
+            0.0
+        };
+        let max = self.blur_max.as_secs_f32() * 1000.0;
+        let s = format!(
+            ", blur {avg:.2}ms avg / {max:.2}ms max ({} blurred, {} skipped)",
+            self.blur_count, self.blur_skipped
+        );
+        self.blur_sum = Duration::ZERO;
+        self.blur_max = Duration::ZERO;
+        self.blur_count = 0;
+        self.blur_skipped = 0;
+        s
+    }
+
     fn draw(&mut self, qh: &QueueHandle<App>) {
         let (w, h) = (self.width, self.height);
         if w == 0 || h == 0 {
@@ -128,7 +184,30 @@ impl App {
             .create_buffer(w as i32, h as i32, stride, wl_shm::Format::Argb8888)
             .expect("create_buffer");
 
-        if !self.backdrop.present(canvas, w, h) {
+        // present() leaves the raw mirrored strip in `canvas`; blur it in place and
+        // composite the tint over it. With no capture yet, fall back to a flat tint.
+        if self.backdrop.present(canvas, w, h) {
+            // With --no-blur, blur is None and the raw mirrored strip stays as-is.
+            if let Some(blur) = &self.blur {
+                if self.prev_raw.as_slice() == &*canvas {
+                    // backdrop unchanged: reuse the cached blur, skip the pass
+                    canvas.copy_from_slice(&self.cached);
+                    self.blur_skipped += 1;
+                } else {
+                    self.prev_raw.clear();
+                    self.prev_raw.extend_from_slice(canvas);
+                    let t0 = Instant::now();
+                    blur.run(canvas, w, h).expect("blur");
+                    composite_tint(canvas, self.cfg.color, self.cfg.alpha);
+                    let dt = t0.elapsed();
+                    self.blur_sum += dt;
+                    self.blur_max = self.blur_max.max(dt);
+                    self.blur_count += 1;
+                    self.cached.clear();
+                    self.cached.extend_from_slice(canvas);
+                }
+            }
+        } else {
             let a = self.cfg.alpha;
             let [r, g, b] = self.cfg.color;
             // wl_shm ARGB8888 is premultiplied, little-endian bytes B,G,R,A.
@@ -165,13 +244,12 @@ impl CompositorHandler for App {
                 Backdrop::Screencopy(c) => c.drain_stats(),
                 Backdrop::Synthetic(_) => None,
             };
-            match cap {
-                Some((avg, max, n)) => eprintln!(
-                    "wayshade-panel: {} fps, capture {avg:.2}ms avg / {max:.2}ms max ({n} frames)",
-                    self.frames
-                ),
-                None => eprintln!("wayshade-panel: {} fps", self.frames),
-            }
+            let cap_str = match cap {
+                Some((avg, max, n)) => format!(", capture {avg:.2}ms avg / {max:.2}ms max ({n} frames)"),
+                None => String::new(),
+            };
+            let blur_str = self.drain_blur_stats();
+            eprintln!("wayshade-panel: {} fps{cap_str}{blur_str}", self.frames);
             self.frames = 0;
             self.last_report = time;
         }

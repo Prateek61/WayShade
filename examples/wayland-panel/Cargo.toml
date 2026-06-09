@@ -13,6 +13,8 @@ wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", default-features = false, features = ["client"] }
 calloop = { version = "0.14", features = ["signals"] }
 calloop-wayland-source = "0.4"
+# the safe wrapper for live backdrop blur; needs libfx built (cmake --build build).
+fx = { path = "../../fx" }
 
 [[bin]]
 name = "wayshade-panel"
