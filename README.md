@@ -1,8 +1,10 @@
 # WayShade
 
 GPU/CPU-accelerated visual effects library for Wayland compositors and clients.
+Halide-generated kernels (CPU SIMD + CUDA) behind a stable C ABI, a safe Rust
+wrapper, and a `wlr-layer-shell` demo panel that blurs the desktop behind it live.
 
-> **Status: work in progress.**
+![The WayShade panel on Sway, dual-Kawase blurring the windows behind it in real time](docs/assets/panel-blur.gif)
 
 ## Prerequisites
 
@@ -14,7 +16,7 @@ GPU/CPU-accelerated visual effects library for Wayland compositors and clients.
   export LD_LIBRARY_PATH=$HOME/opt/halide/lib:$LD_LIBRARY_PATH
   ```
 - For the Rust crates: a Rust toolchain (rustup) and `libclang` (`libclang-dev` on
-  Debian/Ubuntu) `bindgen` needs it to build `fx-sys`.
+  Debian/Ubuntu), which `bindgen` needs to build `fx-sys`.
 - For the Wayland demo only: a running `wlr-layer-shell` compositor (Sway, Hyprland,
   or KWin). The `wayshade-panel` crate has no other system dependency.
 
@@ -180,11 +182,12 @@ cargo build -p wayshade-panel --release
 ./target/release/wayshade-panel --help         # all flags
 ```
 
-The blur runs on the CPU by default (the mirrored strip is small, ~2 ms/frame, well
-under a 60 Hz budget.
+The blur runs on the CPU by default. The mirrored strip is small, about 2 ms per
+frame, well under a 60 Hz budget, so the GPU's fixed per-op transfer overhead
+would not pay off there.
 
 Quit with Ctrl-C (it unwinds cleanly and tears the surface down). Needs a compositor
-that implements `zwlr_layer_shell_v1` Sway, Hyprland, and KWin all do and, for
+that implements `zwlr_layer_shell_v1` (Sway, Hyprland, and KWin all do) and, for
 real backdrop capture, `zwlr_screencopy_v1` (Sway and Hyprland; KWin does not, hence
 the synthetic fallback). On a compositor without screencopy (e.g. KDE/KWin) you can
 still see real capture by running the panel inside a **nested Sway**:
@@ -194,7 +197,7 @@ sway   # opens a nested compositor window; keep it visible and focused
 WAYLAND_DISPLAY=wayland-1 ./target/release/wayshade-panel --height 48 --alpha 0
 ```
 
-Keep the nested Sway window on top — an occluded or minimized one gets no frame
+Keep the nested Sway window on top, an occluded or minimized one gets no frame
 callbacks, so the panel freezes on its first frame. The bar mirrors the strip right
 below it, so open a window in that Sway session under the bar to give the blur some
 busy content (an empty desktop blurs to nothing); `--alpha 0` drops the tint so the
@@ -223,6 +226,32 @@ GPU backend that includes the host↔device copies, not just the kernel). Each
 effect is measured at 1080p, 1440p, and 4K on the CPU, and the three blurs
 (`gaussian`, `kawase`, `shadow`) additionally on CUDA.
 
+Median ms per frame, measured on a laptop with an RTX 4050. Lower is better.
+Parameters: gamma 2.2, gaussian sigma 8, kawase offset 1, shadow (sigma 8,
+dy 8, opacity 0.5), color (1.1 / 1.2 / 1.3), rounded (radius 16, softness 1).
+
+| Effect   | Backend |   1080p |   1440p |       4K |
+| -------- | ------- | ------: | ------: | -------: |
+| gaussian | CPU     |   237.9 |   373.4 |    863.4 |
+| gaussian | GPU     |   102.5 |   180.5 |    407.7 |
+| kawase   | CPU     |    39.1 |    66.5 |    150.8 |
+| kawase   | GPU     | **3.6** | **6.6** | **15.4** |
+| shadow   | CPU     |    61.2 |   101.9 |    228.6 |
+| shadow   | GPU     |    98.3 |   175.4 |    391.2 |
+| gamma    | CPU     |    93.5 |   167.8 |    378.3 |
+| color    | CPU     |    17.5 |    31.6 |     69.6 |
+| rounded  | CPU     |    11.1 |    20.9 |     44.5 |
+
+Dual-Kawase on the GPU is the headline result. It is the one effect whose
+multi-resolution pyramid stays device-resident across passes, and it comes in
+around 11x its own CPU path at 1080p and under 16 ms even at 4K. The Gaussian
+and shadow GPU paths carry known schedule debt: a naive inlined kernel that
+always pays the full 65-tap window, plus the fixed host↔device round trip every
+GPU op makes. That round trip is also why shadow on the GPU loses to its own
+CPU path (blurring only the alpha channel is cheap on the CPU, so the transfer
+dominates). gamma is the slowest pointwise effect because it evaluates `pow()`
+per pixel rather than a lookup table.
+
 Build the C side first so `libfx.so` exists, then:
 
 ```bash
@@ -246,3 +275,9 @@ FX_BENCH_SAMPLE_SIZE=100 FX_BENCH_MEASURE_SECS=10 cargo bench -p fx
 The GPU groups auto-skip when no CUDA driver is present (a
 `dlopen("libcuda.so.1")` probe), so the suite runs CPU-only on a driverless
 machine instead of aborting.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The vendored single-file libraries under
+`examples/third_party/` (stb_image, stb_image_write, toml++) keep their own
+licenses.
